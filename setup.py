@@ -12,6 +12,7 @@ setup(
     download_url = "https://pypi.python.org/packages/source/j/jexifs/jexifs-{version}.tar.gz".format(version=VERSION),
     description = 'Select jpegs based on their exif-data.',
     long_description = open('README.rst').read() if os.path.isfile('README.rst') else str(),
+    py_modules = ["timeparse"],
     scripts = ["jexifs"],
     install_requires = ['timeparse'],
     classifiers=[
