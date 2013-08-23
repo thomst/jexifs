@@ -35,7 +35,7 @@ timeparser.DatetimeFormats.config(try_hard=True)
 
 USAGE = """usage: 
   exifimgs -h
-  exifimgs [PATH] [OPTIONS]
+  exifimgs [PATH:EXT] [OPTIONS]
 """
 
 HELP = """usage: 
@@ -47,8 +47,7 @@ description:
 
 
 positional argument:
-  PATH                      All jpegs found under PATH will be regarded.
-  EXT                       Look for files ending with EXT.
+  PATH:EXT                  Use all files anywhere under PATH that ends on EXT.
 
 
 optional arguments:
@@ -84,7 +83,7 @@ arguments for image-selection:
 """
 
 
-class Image:
+class Image(object):
     KEYS = {
         'model' : 'Exif.Image.Model',
         'datetime' : 'Exif.Image.DateTime',
@@ -100,6 +99,13 @@ class Image:
         'model'
         )
     fmt = '{path} {date} {time} {exposure_time}'
+
+    @classmethod
+    def setformat(cls, fmt):
+        for attr in Image.ATTR:
+            fmt = re.sub(r'(?<![\w])(%s)(?![\w])' % attr, r'{\1}', fmt)
+        cls.fmt = fmt
+
     def __init__(self, data):
         self._data = dict([(k, None) for k in self.ATTR])
         if type(data) == str: self.readexif(data)
@@ -122,12 +128,6 @@ class Image:
             date, time = self._data['datetime'].split()
             self._data['date'] = date
             self._data['time'] = time
-
-    @classmethod
-    def setformat(cls, fmt):
-        for attr in Image.ATTR:
-            fmt = re.sub(r'(?<![\w])(%s)(?![\w])' % attr, r'{\1}', fmt)
-        cls.fmt = fmt
 
     @property
     def path(self):
@@ -161,7 +161,7 @@ class Image:
         print self.fmt.format(**self._data)
 
 
-class Index:
+class Index(object):
     _format = None
     _sep = None
     def __init__(self, string):
@@ -198,11 +198,11 @@ class Index:
             yield dict(zip(self.format, line.rstrip('\n').split(self.sep)))
 
 
-class Jexifs:
+class Jexifs(object):
     def __init__(self, args):
         self.args = args
-        self._images = list()
-        self._selection = list()
+        self._paths = list()
+        self._images = None
         self._timed = dict()
 
     def run(self):
@@ -213,29 +213,41 @@ class Jexifs:
     @property
     def images(self):
         if self._images: return self._images
-        if self.args.index: self._index()
-        elif self.args.pathext: self._pathext()
-        if self.args.sort: self._sort()
+        #make a list from the generator if imgs need to be sorted
+        li_or_gen = lambda g: [i for i in g] if self.args.sort else g
+
+        if self.args.index: self._images = li_or_gen(self._fromindex)
+        elif self.args.pathext: self._images = li_or_gen(self._frompaths)
+
+        if self.args.sort: self.sort(self.args.sort)
         return self._images
 
-    def _index(self):
-        #TODO: if not sorting this should be a generator!
+    @property
+    def _fromindex(self):
         for data in self.args.index():
-            self._images.append(Image(data))
+            yield Image(data)
 
-    def _pathext(self):
+    @property
+    def _frompaths(self):
+        for path in self.paths:
+            yield Image(path)
+
+    @property
+    def paths(self):
+        if self._paths: return self._paths
         path, ext = self.args.pathext.split(':')
         for i,j,k in os.walk(path):
             for f in k:
                 if not f.endswith(ext): continue
-                self._images.append(Image(os.path.join(i, f)))
-        #if imgs won't be sorted otherwise sort them by paths
-        if not self.args.sort: self._images.sort(key=lambda i: i.path)
+                self._paths.append(os.path.join(i, f))
+        #if imgs won't be sorted make sure paths are...
+        if not self.args.sort: self._paths.sort()
+        return self._paths
 
-    def _sort(self):
-        if self.args.sort == 'exposure_time':
-            for img in self._images: img.exposure_time = Fraction(img.exposure_time)
-        self._images.sort(key=lambda i: getattr(i, self.args.sort))
+    def sort(self, attr):
+        if attr == 'exposure_time':
+            for img in self._images: img._data['exposure_time'] = Fraction(img.exposure_time)
+        self._images.sort(key=lambda i: getattr(i, attr))
 
     def check_model(self, img):
         return self.args.model == img.model
@@ -319,6 +331,7 @@ parser.add_argument(
     '--sort',
     default=None,
     )
+#TODO: if using an index-file --format should defaults to the index-file's format.
 parser.add_argument(
     '-f',
     '--format',
@@ -329,6 +342,7 @@ parser.add_argument(
     '--Format',
     type=Index.setformat,
     )
+#TODO: should also be read from stdin!
 parser.add_argument(
     '-I',
     '--index',

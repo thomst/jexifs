@@ -10,7 +10,7 @@ class TimeImages(unittest.TestCase):
         self.j = Jexifs(args)
 
     def test_images(self):
-        foo = self.j.images
+        foo = self.j.run()
 
 
 class TimePrintlines(unittest.TestCase):
@@ -19,7 +19,7 @@ class TimePrintlines(unittest.TestCase):
         self.j = Jexifs(args)
 
     def test_printlines(self):
-        self.j.printlines()
+        self.j.run()
 
 
 class TimeSort(unittest.TestCase):
@@ -28,8 +28,7 @@ class TimeSort(unittest.TestCase):
         self.j = Jexifs(args)
 
     def test_sort(self):
-        foo = self.j.images
-        self.j._sort()
+        self.j.run()
 
 
 class TimeSelection(unittest.TestCase):
@@ -38,7 +37,7 @@ class TimeSelection(unittest.TestCase):
         self.j = Jexifs(args)
 
     def test_printlines(self):
-        self.j.printlines()
+        self.j.run()
 
 
 class TimeIndex(unittest.TestCase):
