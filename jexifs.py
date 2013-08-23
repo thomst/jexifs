@@ -11,7 +11,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 
-__version__ = '0.1.1'
+VERSION = '0.1.1'
 
 import os
 import sys
@@ -30,8 +30,6 @@ timeparser.TimeFormats.config(try_hard=True)
 timeparser.DateFormats.config(try_hard=True)
 timeparser.DatetimeFormats.config(try_hard=True)
 
-
-VERSION = '0.1.0'
 
 
 USAGE = """usage: 
