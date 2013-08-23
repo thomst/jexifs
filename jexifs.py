@@ -16,6 +16,7 @@ __version__ = '0.1.0'
 import os
 import sys
 import re
+import itertools
 import argparse
 import pyexiv2
 import timeparse
@@ -52,9 +53,8 @@ positional argument:
 
 optional arguments:
   -h, --help                Print this help message and exit.
-  -i, --info                Get some information about the images.
   -f, --format [FORMAT]     Specify the format of an index-file.
-  -I, --index [FILE]   Use FILE as index instead of exif-data.
+  -i, --index [FILE]   Use FILE as index instead of exif-data.
   -s, --sort TAG            Sort all images after TAG (if no exif-data available
                             for TAG the image will be excluded).
   -H, --headline           Print the output's format as first line.
@@ -81,6 +81,12 @@ arguments for image-selection:
   Use durations with --time or --time and --date to select all images of
   a specific duration.
 """
+
+class ConfigurationError(argparse.ArgumentTypeError):
+    def __init__(self, msg):
+        self.msg = msg
+    def __str__(self):
+        return self.msg
 
 
 class Image(object):
@@ -113,7 +119,7 @@ class Image(object):
 
     def setdata(self, data):
         self._data.update(data)
-        if not self._data['datetime'] and data['date'] and data['time']:
+        if not self._data['datetime'] and self._data['date'] and self._data['time']:
             self._data['datetime'] = ' '.join((data['date'], data['time']))
 
     def readexif(self, path):
@@ -164,25 +170,30 @@ class Image(object):
 class Index(object):
     _format = None
     _sep = None
-    def __init__(self, string):
-        self._file = open(string, 'r')
-        self.check_first_line()
-
-    @property
-    def file(self):
-        return self._file
+    _firstline = None
 
     @classmethod
     def setformat(cls, rawf):
         match = re.search('\W+', rawf)
         cls._sep = match.group() if match else ' '
-        cls._format = re.findall('\w+', rawf)
-        if not all([f in Image.ATTR for f in cls._format]):
-            raise ValueError('{0} is not a valid format'.format(rawf))
+        fmt = re.findall('\w+', rawf)
+        if not all([f in Image.ATTR for f in fmt]):
+            raise ConfigurationError('{0} is not a valid format'.format(rawf))
+        else: cls._format = fmt
+
+    def __init__(self, string):
+        if string == '-': self._file = sys.stdin
+        else: self._file = open(string, 'r')
+        self.check_first_line()
 
     def check_first_line(self):
-        try: self.setformat(self.file.readline())
-        except: self.file.seek(0)
+        firstline = self.file.readline().rstrip('\n')
+        try: self.setformat(firstline)
+        except ConfigurationError: self._firstline = firstline
+
+    @property
+    def file(self):
+        return self._file
 
     @property
     def format(self):
@@ -192,8 +203,11 @@ class Index(object):
     def sep(self):
         return self._sep
 
-    def __call__(self):
-        self.format
+    @property
+    def lines(self):
+        if not self.format: raise ConfigurationError('No input-format specified')
+        if self._firstline:
+            yield dict(zip(self.format, self._firstline.split(self.sep)))
         for line in self.file:
             yield dict(zip(self.format, line.rstrip('\n').split(self.sep)))
 
@@ -207,7 +221,6 @@ class Jexifs(object):
 
     def run(self):
         if self.args.help: print HELP
-        elif self.args.info: print len(self.images)
         else: self.printlines()
 
     @property
@@ -224,7 +237,7 @@ class Jexifs(object):
 
     @property
     def _fromindex(self):
-        for data in self.args.index():
+        for data in self.args.index.lines:
             yield Image(data)
 
     @property
@@ -263,18 +276,18 @@ class Jexifs(object):
     def check_dates(self, img):
         if not img.date: return False
         imgs_date = timeparser.parsedate(img.date)
-        return any([date == imgs_date for date in self.args.date])
+        return any([date == imgs_date for date in self.args.dates])
 
     @property
     def timed(self):
         if self._timed: return self._timed
-        for time in self.args.time: self._timed[time] = False
+        for time in self.args.times: self._timed[time] = False
         return self._timed
 
     def check_times(self, img):
         if not img.time: return False
         imgs_time = timeparser.parsetime(img.time)
-        times = self.args.time
+        times = self.args.times
         if self.args.plus:
             if self.args.first_after:
                 for time in times:
@@ -293,8 +306,8 @@ class Jexifs(object):
     def printlines(self):
         if self.args.headline: print Image.fmt.translate(None, '{}')
         for img in self.images:
-            if self.args.time and not self.check_times(img): continue
-            if self.args.date and not self.check_dates(img): continue
+            if self.args.times and not self.check_times(img): continue
+            if self.args.dates and not self.check_dates(img): continue
             if self.args.exposure_time and not self.check_exposure_time(img): continue
             if self.args.model and not self.check_model(img): continue
             img.fprint()
@@ -314,11 +327,6 @@ parser.add_argument(
 parser.add_argument(
     '-h',
     '--help',
-    action='store_true',
-    )
-parser.add_argument(
-    '-i',
-    '--info',
     action='store_true',
     )
 parser.add_argument(
@@ -342,24 +350,24 @@ parser.add_argument(
     '--Format',
     type=Index.setformat,
     )
-#TODO: should also be read from stdin!
 parser.add_argument(
-    '-I',
+    '-i',
     '--index',
     type=Index,
+    const='-',
+    nargs='?',
     default=None
     )
-#TODO: --dates and --times
 parser.add_argument(
     '-d',
-    '--date',
+    '--dates',
     action=timeparse.ParseDate,
     nargs='+',
     default=None
     )
 parser.add_argument(
     '-t',
-    '--time',
+    '--times',
     action=timeparse.ParseDaytime,
     nargs='+',
     default=None
@@ -391,10 +399,14 @@ parser.add_argument(
 
 
 def main():
-    jexifs = Jexifs(parser.parse_args())
+    try: jexifs = Jexifs(parser.parse_args())
+    except (IOError, KeyboardInterrupt): sys.exit(1)
     timeparser.ENDIAN.set('big')
     try: jexifs.run()
-    except Exception as err: raise
+    except (IOError, KeyboardInterrupt): pass
+    except ConfigurationError as err: print err
+    finally:
+        if jexifs.args.index: jexifs.args.index.file.close()
 
 
 if __name__ == "__main__": main()
