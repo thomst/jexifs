@@ -100,40 +100,33 @@ class Image:
         'model'
         )
     fmt = '{path} {date} {time} {exposure_time}'
-    #TODO: couldn't I use just strings for datetime, date and time???
     def __init__(self, data):
         self._data = dict([(k, None) for k in self.ATTR])
         if type(data) == str: self.readexif(data)
-        else:
-            self._data.update(data)
-            if self._data['date']:
-                self._data['date'] = timeparser.parsedate(data['date'])
-            if self._data['time']:
-                self._data['time'] = timeparser.parsetime(data['time'])
-            if self._data['exposure_time']:
-                self._data['exposure_time'] = Fraction(data['exposure_time'])
-            if self._data['datetime']:
-                self._data['datetime'] = timeparser.parsedatetime(data['datetime'])
+        else: self.setdata(data)
+
+    def setdata(self, data):
+        self._data.update(data)
+        if not self._data['datetime'] and data['date'] and data['time']:
+            self._data['datetime'] = ' '.join((data['date'], data['time']))
 
     def readexif(self, path):
         self._data['path'] = path
         self._data['name'] = os.path.basename(path)
         data = pyexiv2.ImageMetadata(path)
         data.read()
-        def getvalue(key):
-            try: return data[self.KEYS[key]].value
-            except KeyError: return None
-        datetime = getvalue('datetime')
-        if datetime:
-            self._data['datetime'] = datetime
-            self._data['date'] = datetime.date()
-            self._data['time'] = datetime.time()
-        self._data['exposure_time'] = getvalue('exposure_time')
-        self._data['model'] = getvalue('model')
+        for k, e in self.KEYS.items():
+            try: self._data[k] = data[e].raw_value
+            except KeyError: self._data[k] = None
+        if self._data['datetime']:
+            date, time = self._data['datetime'].split()
+            self._data['date'] = date
+            self._data['time'] = time
 
     @classmethod
     def setformat(cls, fmt):
-        for attr in Image.ATTR: fmt = fmt.replace(attr, '{' + attr + '}')
+        for attr in Image.ATTR:
+            fmt = re.sub(r'(?<![\w])(%s)(?![\w])' % attr, r'{\1}', fmt)
         cls.fmt = fmt
 
     @property
@@ -173,6 +166,7 @@ class Index:
     _sep = None
     def __init__(self, string):
         self._file = open(string, 'r')
+        self.check_first_line()
 
     @property
     def file(self):
@@ -186,11 +180,12 @@ class Index:
         if not all([f in Image.ATTR for f in cls._format]):
             raise ValueError('{0} is not a valid format'.format(rawf))
 
+    def check_first_line(self):
+        try: self.setformat(self.file.readline())
+        except: self.file.seek(0)
+
     @property
     def format(self):
-        if not self._format:
-            self.file.seek(0)
-            self.setformat(self.file.readline())
         return self._format
 
     @property
@@ -200,7 +195,7 @@ class Index:
     def __call__(self):
         self.format
         for line in self.file:
-            yield dict(zip(self.format, line.split(self.sep)))
+            yield dict(zip(self.format, line.rstrip('\n').split(self.sep)))
 
 
 class Jexifs:
@@ -234,19 +229,20 @@ class Jexifs:
             for f in k:
                 if not f.endswith(ext): continue
                 self._images.append(Image(os.path.join(i, f)))
-        #sort after paths if not sorting by option
+        #if imgs won't be sorted otherwise sort them by paths
         if not self.args.sort: self._images.sort(key=lambda i: i.path)
 
     def _sort(self):
-        images = [i for i in self._images if getattr(i, self.args.sort)]
-        images.sort(key=lambda i: getattr(i, self.args.sort))
-        self._images = images
+        if self.args.sort == 'exposure_time':
+            for img in self._images: img.exposure_time = Fraction(img.exposure_time)
+        self._images.sort(key=lambda i: getattr(i, self.args.sort))
 
     def check_model(self, img):
         return self.args.model == img.model
 
     def check_exposure_time(self, img):
-        exposure_time = self.args.exposure_time
+        exti = self.args.exposure_time
+        imgs_exti = Fraction(img.exposure_time)
         if len(exposure_time) == 1:
             return img.exposure_time == exposure_time[0]
         else:
@@ -254,7 +250,8 @@ class Jexifs:
 
     def check_dates(self, img):
         if not img.date: return False
-        return any([date == img.date for date in self.args.date])
+        imgs_date = timeparser.parsedate(img.date)
+        return any([date == imgs_date for date in self.args.date])
 
     @property
     def timed(self):
@@ -264,21 +261,22 @@ class Jexifs:
 
     def check_times(self, img):
         if not img.time: return False
+        imgs_time = timeparser.parsetime(img.time)
         times = self.args.time
         if self.args.plus:
             if self.args.first_after:
                 for time in times:
                     if self.timed[time]:
-                        self.timed[time] = img.time > time
+                        self.timed[time] = imgs_time > time
                     else:
-                        self.timed[time] = img.time > time
-                        if self.timed[time] and img.time < time + self.args.plus:
+                        self.timed[time] = imgs_time > time
+                        if self.timed[time] and imgs_time < time + self.args.plus:
                             return True
                 return False
             else:
-                return any([t < img.time < t + self.args.plus for t in times])
+                return any([t < imgs_time < t + self.args.plus for t in times])
         else:
-            return any([t == img.time for t in times])
+            return any([t == imgs_time for t in times])
 
     def printlines(self):
         if self.args.headline: print Image.fmt.translate(None, '{}')
@@ -337,7 +335,7 @@ parser.add_argument(
     type=Index,
     default=None
     )
-
+#TODO: --dates and --times
 parser.add_argument(
     '-d',
     '--date',

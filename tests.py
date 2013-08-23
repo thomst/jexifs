@@ -43,12 +43,22 @@ class TimeSelection(unittest.TestCase):
 
 class TimeIndex(unittest.TestCase):
     def setUp(self):
-        args = parser.parse_args("--index table.txt -t 20h -p 10min".split())
+        args = parser.parse_args("--index short.tbl -t 20h -p 10min".split())
         self.j = Jexifs(args)
 
     def test_printlines(self):
         ENDIAN.set('big')
         self.j.run()
+
+class TimeIndexFormat(unittest.TestCase):
+    def setUp(self):
+        args = parser.parse_args("--index short.tbl -s datetime -t 20h -p 10min -f name-datetime".split())
+        self.j = Jexifs(args)
+
+    def test_printlines(self):
+        ENDIAN.set('big')
+        self.j.run()
+
 
 
 
