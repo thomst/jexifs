@@ -16,7 +16,6 @@ __version__ = '0.1.0'
 import os
 import sys
 import re
-import itertools
 import argparse
 import pyexiv2
 import timeparse
@@ -32,6 +31,7 @@ timeparser.DateFormats.config(try_hard=True)
 timeparser.DatetimeFormats.config(try_hard=True)
 
 
+VERSION = '0.1.0'
 
 
 USAGE = """usage: 
@@ -53,11 +53,16 @@ positional argument:
 
 optional arguments:
   -h, --help                Print this help message and exit.
+  -v, --version              Print the program's version and exit.
   -f, --format [FORMAT]     Specify the format of an index-file.
-  -i, --index [FILE]   Use FILE as index instead of exif-data.
-  -s, --sort TAG            Sort all images after TAG (if no exif-data available
-                            for TAG the image will be excluded).
-  -H, --headline           Print the output's format as first line.
+  -i, --index [FILE]        Use FILE as index instead of checking jpegs.
+  -H, --headline            Print the output's format as first line.
+  -s, --sort TAG            Sort all images after TAG.
+                            The default order is alphanumerical in regard of the
+                            filenames (using the relative path including PATH).
+                            Mind that sorting is memory-expensive, because the
+                            data of all jpegs (resp. of the index-file) will be
+                            loaded into memory. Only use it if needed.
 
 
 arguments for image-selection:
@@ -72,14 +77,20 @@ arguments for image-selection:
 
 
   durations:
-  -p, --plus [WEEKS] [DAYS] [HOURS] [MINUTES] [SECONDS]
+  -p, --plus [HOURS] [MINUTES] [SECONDS]
                             Defines a duration that starts with a specified time.
-  -a, --first-after         Select the first matched image for time-specific
-                            selection.
+                            To be used together with --times.
+  -a, --first-after         Select the first matched image for after each
+                            specified time. Use --plus to specify a timespan the
+                            image should be in.
+                            Mind that this only gives useful results if the
+                            the images are sorted by datetime.
 
 
-  Use durations with --time or --time and --date to select all images of
-  a specific duration.
+known bugs:
+  Using a duration that passes midnight won't produce a senseful result:
+  --times 22h --plus 4h would look for images that are older than 22h and
+  younger than 2h. Date will not be regarded.
 """
 
 class ConfigurationError(argparse.ArgumentTypeError):
@@ -221,6 +232,7 @@ class Jexifs(object):
 
     def run(self):
         if self.args.help: print HELP
+        elif self.args.version: print VERSION
         else: self.printlines()
 
     @property
@@ -273,6 +285,8 @@ class Jexifs(object):
         else:
             return exposure_time[0] < img.exposure_time < exposure_time[1]
 
+    #TODO: If I could be sure for chronologity I could stop the program after
+    #processing a searched date or datetime.
     def check_dates(self, img):
         if not img.date: return False
         imgs_date = timeparser.parsedate(img.date)
@@ -284,22 +298,24 @@ class Jexifs(object):
         for time in self.args.times: self._timed[time] = False
         return self._timed
 
+    #TODO: -t 22h -p 4h will check for files between 22h and 2h...
+    #Maybe I need an extra datetime mode for durations passing days.
     def check_times(self, img):
         if not img.time: return False
         imgs_time = timeparser.parsetime(img.time)
         times = self.args.times
-        if self.args.plus:
+        if self.args.hours:
             if self.args.first_after:
                 for time in times:
                     if self.timed[time]:
                         self.timed[time] = imgs_time > time
                     else:
                         self.timed[time] = imgs_time > time
-                        if self.timed[time] and imgs_time < time + self.args.plus:
+                        if self.timed[time] and imgs_time < time + self.args.hours:
                             return True
                 return False
             else:
-                return any([t < imgs_time < t + self.args.plus for t in times])
+                return any([t < imgs_time < t + self.args.hours for t in times])
         else:
             return any([t == imgs_time for t in times])
 
@@ -327,6 +343,11 @@ parser.add_argument(
 parser.add_argument(
     '-h',
     '--help',
+    action='store_true',
+    )
+parser.add_argument(
+    '-v',
+    '--version',
     action='store_true',
     )
 parser.add_argument(
@@ -390,6 +411,7 @@ parser.add_argument(
     action=timeparse.ParseTimedelta,
     nargs='+',
     default=timedelta(),
+    dest='hours'    #make ParseTimedelta take the first value as hours.
     )
 parser.add_argument(
     '-a',
