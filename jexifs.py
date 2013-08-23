@@ -11,7 +11,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 
-__version__ = '0.1.0'
+__version__ = '0.1.1'
 
 import os
 import sys
@@ -53,8 +53,12 @@ positional argument:
 
 optional arguments:
   -h, --help                Print this help message and exit.
-  -v, --version              Print the program's version and exit.
-  -f, --format [FORMAT]     Specify the format of an index-file.
+  -v, --version             Print the program's version and exit.
+  -f, --format [FORMAT]     Specify the format of the output.
+  -F, --Format [FORMAT]     Jexifs checks the first line of an index-file for
+                            informations that helps to interprete the lines'
+                            fields. If there is no headline use --Format to
+                            specify its format.
   -i, --index [FILE]        Use FILE as index instead of checking jpegs.
   -H, --headline            Print the output's format as first line.
   -s, --sort TAG            Sort all images after TAG.
@@ -63,6 +67,9 @@ optional arguments:
                             Mind that sorting is memory-expensive, because the
                             data of all jpegs (resp. of the index-file) will be
                             loaded into memory. Only use it if needed.
+
+TAG could be path, name, date, time, datetime, exposure_time or model.
+FORMAT is an arbitrary sequence of these words (e.g. -f "path - date - time")
 
 
 arguments for image-selection:

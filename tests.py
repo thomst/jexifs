@@ -42,7 +42,7 @@ class TimeSelection(unittest.TestCase):
 
 class TimeIndex(unittest.TestCase):
     def setUp(self):
-        args = parser.parse_args("--index short.tbl -t 20h -p 10min".split())
+        args = parser.parse_args("--index table.txt".split())
         self.j = Jexifs(args)
 
     def test_printlines(self):
