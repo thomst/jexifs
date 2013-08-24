@@ -33,7 +33,7 @@ class TimeSort(unittest.TestCase):
 
 class TimeSelection(unittest.TestCase):
     def setUp(self):
-        args = parser.parse_args('Bilder/:jpg -s datetime -t 20h -p 10min'.split())
+        args = parser.parse_args('Bilder/:jpg -t 20h -p 10min'.split())
         self.j = Jexifs(args)
 
     def test_printlines(self):
@@ -42,7 +42,7 @@ class TimeSelection(unittest.TestCase):
 
 class TimeIndex(unittest.TestCase):
     def setUp(self):
-        args = parser.parse_args("--index table.txt".split())
+        args = parser.parse_args("--index short.tbl".split())
         self.j = Jexifs(args)
 
     def test_printlines(self):

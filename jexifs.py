@@ -33,13 +33,13 @@ timeparser.DatetimeFormats.config(try_hard=True)
 
 
 USAGE = """usage: 
-  exifimgs -h
-  exifimgs [PATH:EXT] [OPTIONS]
+  jexifs -h
+  jexifs [PATH:EXT] [OPTIONS]
 """
 
 HELP = """usage: 
-  exifimgs -h
-  exifimgs [PATH:EXT] [OPTIONS]
+  jexifs -h
+  jexifs [PATH:EXT] [OPTIONS]
 
 description:
   Image-selection based on their exifdata.
@@ -73,8 +73,8 @@ FORMAT is an arbitrary sequence of these words (e.g. -f "path - date - time")
 arguments for image-selection:
 
   data:
-  -d, --date DATE           Select all images captured at DATE.
-  -t, --time TIME           Select all images captured at TIME.
+  -d, --dates DATE [DATE..] Select all images captured at DATE.
+  -t, --times TIME [TIME..] Select all images captured at TIME.
   -e, --exposure-time SEC [SEC2]
                             Select all images whose exposure-time is SEC or
                             between SEC and SEC2.
