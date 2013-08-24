@@ -4,15 +4,6 @@ from jexifs import parser
 from jexifs import Jexifs
 
 
-class TimeImages(unittest.TestCase):
-    def setUp(self):
-        args = parser.parse_args('Bilder/:jpg'.split())
-        self.j = Jexifs(args)
-
-    def test_images(self):
-        foo = self.j.run()
-
-
 class TimePrintlines(unittest.TestCase):
     def setUp(self):
         args = parser.parse_args('Bilder/:jpg'.split())

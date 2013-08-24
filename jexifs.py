@@ -98,6 +98,7 @@ known bugs:
   younger than 2h. Date will not be regarded.
 """
 
+
 class ConfigurationError(argparse.ArgumentTypeError):
     def __init__(self, msg):
         self.msg = msg
@@ -105,97 +106,138 @@ class ConfigurationError(argparse.ArgumentTypeError):
         return self.msg
 
 
-class Image(object):
+class classproperty(object):
+    def __init__(self, f):
+        self.f = classmethod(f)
+    def __get__(self, *args):
+        return self.f.__get__(*args)()
+
+
+class Attr(object):
+    def __init__(self, rvalue=None):
+        self.rvalue = rvalue
+        self._value = None
+
+    @property
+    def value(self):
+        if self._value: return self._value
+        self._value = self.parse()
+        return self._value
+
+    def parse(self):
+        return self.rvalue
+
+    def __str__(self):
+        return str(self.rvalue)
+
+    def __nonzero__(self):
+        return bool(self.rvalue)
+
+
+class DatetimeAttr(Attr):
+    _fmt = None
+    FORMATS = 'DatetimeFormats'
+    PARSE = 'parsedatetime'
+    @property
+    def fmt(self):
+        if self._fmt: return self._fmt
+        self.__class__._fmt = getattr(timeparser, self.FORMATS)(self.rvalue)
+        return self._fmt
+
+    def parse(self):
+        return getattr(timeparser, self.PARSE)(self.rvalue, self.fmt)
+
+
+class DateAttr(DatetimeAttr):
+    _fmt = None
+    FORMATS = 'DateFormats'
+    PARSE = 'parsedate'
+
+
+class TimeAttr(DatetimeAttr):
+    _fmt = None
+    FORMATS = 'TimeFormats'
+    PARSE = 'parsetime'
+
+
+class ExposureTimeAttr(Attr):
+    def parse(self):
+        return Fraction(self.rvalue)
+
+
+class Image(dict):
     KEYS = {
         'model' : 'Exif.Image.Model',
         'datetime' : 'Exif.Image.DateTime',
         'exposure_time' : 'Exif.Photo.ExposureTime',
         }
-    ATTR = (
-        'path',
-        'name',
-        'datetime',
-        'date',
-        'time',
-        'exposure_time',
-        'model'
-        )
-    fmt = '{path} {date} {time} {exposure_time}'
+    ATTR = {
+        'path' : Attr,
+        'name' : Attr,
+        'datetime' : DatetimeAttr,
+        'date' : DateAttr,
+        'time' : TimeAttr,
+        'exposure_time' : ExposureTimeAttr,
+        'model' : Attr
+        }
+    _lineformat = None
 
     @classmethod
-    def setformat(cls, fmt):
-        for attr in Image.ATTR:
-            fmt = re.sub(r'(?<![\w])(%s)(?![\w])' % attr, r'{\1}', fmt)
-        cls.fmt = fmt
+    def setformat(cls, lineformat):
+        for attr in Image.ATTR.keys():
+            lineformat = re.sub(r'(?<![\w])(%s)(?![\w])' % attr, r'{\1}', lineformat)
+        cls._lineformat = lineformat
 
     def __init__(self, data):
-        self._data = dict([(k, None) for k in self.ATTR])
+        super(Image, self).__init__(dict([(k, self.ATTR[k]()) for k in self.ATTR.keys()]))
         if type(data) == str: self.readexif(data)
         else: self.setdata(data)
 
     def setdata(self, data):
-        self._data.update(data)
-        if not self._data['datetime'] and self._data['date'] and self._data['time']:
-            self._data['datetime'] = ' '.join((data['date'], data['time']))
+        self.update(dict([(k, self.ATTR[k](v)) for k, v in data.items()]))
+        if not self['datetime'] and self['date'] and self['time']:
+            self['datetime'].rvalue = ' '.join((data['date'], data['time']))
 
     def readexif(self, path):
-        self._data['path'] = path
-        self._data['name'] = os.path.basename(path)
+        self['path'] = Attr(path)
+        self['name'] = Attr(os.path.basename(path))
         data = pyexiv2.ImageMetadata(path)
         data.read()
         for k, e in self.KEYS.items():
-            try: self._data[k] = data[e].raw_value
-            except KeyError: self._data[k] = None
-        if self._data['datetime']:
-            date, time = self._data['datetime'].split()
-            self._data['date'] = date
-            self._data['time'] = time
+            try: self[k] = self.ATTR[k](data[e].raw_value)
+            except KeyError: pass
+        if self['datetime']:
+            date, time = self['datetime'].rvalue.split()
+            self['date'].rvalue = date
+            self['time'].rvalue = time
 
-    @property
-    def path(self):
-        return self._data['path']
-
-    @property
-    def name(self):
-        return self._data['name']
-
-    @property
-    def datetime(self):
-        return self._data['datetime']
-
-    @property
-    def date(self):
-        return self._data['date']
-
-    @property
-    def time(self):
-        return self._data['time']
-
-    @property
-    def exposure_time(self):
-        return self._data['exposure_time']
-
-    @property
-    def model(self):
-        return self._data['model']
+    @classproperty
+    def lineformat(cls):
+        if cls._lineformat: return cls._lineformat
+        if Index.format: cls.setformat(Index.format)
+        else: cls._lineformat = '{path} {date} {time} {exposure_time}'
+        return cls._lineformat
 
     def fprint(self):
-        print self.fmt.format(**self._data)
+        print self.lineformat.format(**self)
 
 
 class Index(object):
-    _format = None
-    _sep = None
     _firstline = None
+    format = None
+    fmtlist = None
+    sep = None
 
     @classmethod
     def setformat(cls, rawf):
         match = re.search('\W+', rawf)
-        cls._sep = match.group() if match else ' '
+        cls.sep = match.group() if match else ' '
         fmt = re.findall('\w+', rawf)
         if not all([f in Image.ATTR for f in fmt]):
             raise ConfigurationError('{0} is not a valid format'.format(rawf))
-        else: cls._format = fmt
+        else:
+            cls.format = rawf
+            cls.fmtlist = fmt
 
     def __init__(self, string):
         if string == '-': self._file = sys.stdin
@@ -212,20 +254,12 @@ class Index(object):
         return self._file
 
     @property
-    def format(self):
-        return self._format
-
-    @property
-    def sep(self):
-        return self._sep
-
-    @property
     def lines(self):
         if not self.format: raise ConfigurationError('No input-format specified')
         if self._firstline:
-            yield dict(zip(self.format, self._firstline.split(self.sep)))
+            yield dict(zip(self.fmtlist, self._firstline.split(self.sep)))
         for line in self.file:
-            yield dict(zip(self.format, line.rstrip('\n').split(self.sep)))
+            yield dict(zip(self.fmtlist, line.rstrip('\n').split(self.sep)))
 
 
 class Jexifs(object):
@@ -276,27 +310,28 @@ class Jexifs(object):
 
     def sort(self, attr):
         if attr == 'exposure_time':
-            for img in self._images: img._data['exposure_time'] = Fraction(img.exposure_time)
-        self._images.sort(key=lambda i: getattr(i, attr))
+            self._images.sort(key=lambda i: i[attr].value)
+        else:
+            self._images.sort(key=lambda i: i[attr].value)
 
     def check_model(self, img):
-        return self.args.model == img.model
+        return self.args.model == img['model']
 
     def check_exposure_time(self, img):
+        if not img['exposure_time']: return False
         exti = self.args.exposure_time
-        imgs_exti = Fraction(img.exposure_time)
-        if len(exposure_time) == 1:
-            return img.exposure_time == exposure_time[0]
+        if len(exti) == 1:
+            return img['exposure_time'].value == exti[0]
         else:
-            return exposure_time[0] < img.exposure_time < exposure_time[1]
+            return exti[0] < img['exposure_time'].value < exti[1]
 
     #TODO: If I could be sure for chronologity I could stop the program after
     #processing a searched date or datetime.
     def check_dates(self, img):
-        if not img.date: return False
-        imgs_date = timeparser.parsedate(img.date)
-        return any([date == imgs_date for date in self.args.dates])
+        if not img['date']: return False
+        return any([date == img['date'].value for date in self.args.dates])
 
+    #TODO: couldn't I set timed in init and skip the property?
     @property
     def timed(self):
         if self._timed: return self._timed
@@ -306,23 +341,22 @@ class Jexifs(object):
     #TODO: -t 22h -p 4h will check for files between 22h and 2h...
     #Maybe I need an extra datetime mode for durations passing days.
     def check_times(self, img):
-        if not img.time: return False
-        imgs_time = timeparser.parsetime(img.time)
+        if not img['time']: return False
         times = self.args.times
         if self.args.hours:
             if self.args.first_after:
                 for time in times:
                     if self.timed[time]:
-                        self.timed[time] = imgs_time > time
+                        self.timed[time] = img['time'].value > time
                     else:
-                        self.timed[time] = imgs_time > time
-                        if self.timed[time] and imgs_time < time + self.args.hours:
+                        self.timed[time] = img['time'].value > time
+                        if self.timed[time] and img['time'].value < time + self.args.hours:
                             return True
                 return False
             else:
-                return any([t < imgs_time < t + self.args.hours for t in times])
+                return any([t < img['time'].value < t + self.args.hours for t in times])
         else:
-            return any([t == imgs_time for t in times])
+            return any([t == img['time'].value for t in times])
 
     def printlines(self):
         if self.args.headline: print Image.fmt.translate(None, '{}')
@@ -365,7 +399,11 @@ parser.add_argument(
     '--sort',
     default=None,
     )
-#TODO: if using an index-file --format should defaults to the index-file's format.
+#TODO: if FORMAT is one singel key and I use an index-file and pipe the result throug
+#head, I get a strange Error:
+#close failed in file object destructor:
+#sys.excepthook is missing
+#lost sys.stderr
 parser.add_argument(
     '-f',
     '--format',
