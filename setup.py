@@ -1,7 +1,7 @@
 from distutils.core import setup
 import os
 
-VERSION = "0.1.1"
+VERSION = "0.2.0"
 
 setup( 
     name = "jexifs", 
