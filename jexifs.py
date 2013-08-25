@@ -18,13 +18,10 @@ import sys
 import re
 import argparse
 import pyexiv2
+import datetime
 import timeparse
 import timeparser
 from fractions import Fraction
-from datetime import datetime
-from datetime import time
-from datetime import timedelta
-from datetime import date
 
 timeparser.TimeFormats.config(try_hard=True)
 timeparser.DateFormats.config(try_hard=True)
@@ -262,12 +259,94 @@ class Index(object):
             yield dict(zip(self.fmtlist, line.rstrip('\n').split(self.sep)))
 
 
-class Jexifs(object):
+class Tests(object):
     def __init__(self, args):
+        self.times = args.times
+        self.dates = args.dates
+        self.model = args.model
+        self.exposure_time = args.exposure_time
+        self.first_after = args.first_after
+        self.period = args.hours
+        if self.times: self.timed = dict([(time, None) for time in self.times])
+
+    def __call__(self, img):
+        if self.times and not self.check_times(img): return False
+        if self.dates and not self.check_dates(img): return False
+        if self.exposure_time and not self.check_exposure_time(img): return False
+        if self.model and not self.check_model(img): return False
+        return True
+
+
+    def check_model(self, img):
+        if not img['model']: return False
+        return self.model == img['model'].rvalue
+
+    def check_exposure_time(self, img):
+        if not img['exposure_time']: return False
+        exti = self.exposure_time
+        if len(exti) == 1:
+            return img['exposure_time'].value == exti[0]
+        else:
+            return exti[0] < img['exposure_time'].value < exti[1]
+
+    #TODO: If I could be sure for chronologity I could stop the program after
+    #processing a searched date or datetime.
+    def check_dates(self, img):
+        if not img['date']: return False
+        return any([date == img['date'].value for date in self.dates])
+
+    #TODO: do the loop over times here.
+    def check_times(self, img):
+        if not img['time']: return False
+        if self.first_after:
+            if self.period: return self.first_in_period(img)
+            else: return self.first_after_time(img)
+        else:
+            if self.period: return self.in_period(img)
+            else: return self.on_time(img)
+
+    def first_in_period(self, img):
+        for time in self.times:
+            if self.timed[time]:
+                self.timed[time] = img['time'].value > time
+            else:
+                self.timed[time] = img['time'].value > time
+                if self.timed[time] and img['time'].value < time + self.period:
+                    return True
+        return False
+
+    def first_after_time(self, img):
+        for time in self.times:
+            if self.timed[time]:
+                self.timed[time] = img['time'].value > time
+            else:
+                self.timed[time] = img['time'].value > time
+                if self.timed[time]: return True
+        return False
+
+    def in_period(self, img):
+        if not img['date']:
+            return any([t < img['time'].value < t + self.period for t in self.times])
+        else:
+            for time in self.times:
+                if not self.timed[time]:
+                    if img['time'].value > time:
+                        self.timed[time] = datetime.datetime.combine(img['date'].value, time)
+                if self.timed[time]:
+                    if img['datetime'].value < self.timed[time] + self.period:
+                        return True
+                    else: self.timed[time] = None
+
+    def on_time(self, img):
+        return any([t == img['time'].value for t in self.times])
+
+
+class Jexifs(object):
+    def __init__(self, args, tests):
         self.args = args
+        self.tests = tests
         self._paths = list()
         self._images = None
-        self._timed = dict()
 
     def run(self):
         if self.args.help: print HELP
@@ -314,59 +393,10 @@ class Jexifs(object):
         else:
             self._images.sort(key=lambda i: i[attr].value)
 
-    def check_model(self, img):
-        return self.args.model == img['model']
-
-    def check_exposure_time(self, img):
-        if not img['exposure_time']: return False
-        exti = self.args.exposure_time
-        if len(exti) == 1:
-            return img['exposure_time'].value == exti[0]
-        else:
-            return exti[0] < img['exposure_time'].value < exti[1]
-
-    #TODO: If I could be sure for chronologity I could stop the program after
-    #processing a searched date or datetime.
-    def check_dates(self, img):
-        if not img['date']: return False
-        return any([date == img['date'].value for date in self.args.dates])
-
-    #TODO: couldn't I set timed in init and skip the property?
-    @property
-    def timed(self):
-        if self._timed: return self._timed
-        for time in self.args.times: self._timed[time] = False
-        return self._timed
-
-    #TODO: -t 22h -p 4h will check for files between 22h and 2h...
-    #Maybe I need an extra datetime mode for durations passing days.
-    def check_times(self, img):
-        if not img['time']: return False
-        times = self.args.times
-        if self.args.hours:
-            if self.args.first_after:
-                for time in times:
-                    if self.timed[time]:
-                        self.timed[time] = img['time'].value > time
-                    else:
-                        self.timed[time] = img['time'].value > time
-                        if self.timed[time] and img['time'].value < time + self.args.hours:
-                            return True
-                return False
-            else:
-                return any([t < img['time'].value < t + self.args.hours for t in times])
-        else:
-            return any([t == img['time'].value for t in times])
-
     def printlines(self):
         if self.args.headline: print Image.fmt.translate(None, '{}')
         for img in self.images:
-            if self.args.times and not self.check_times(img): continue
-            if self.args.dates and not self.check_dates(img): continue
-            if self.args.exposure_time and not self.check_exposure_time(img): continue
-            if self.args.model and not self.check_model(img): continue
-            img.fprint()
-
+            if self.tests(img): img.fprint()
 
 
 parser = argparse.ArgumentParser(
@@ -453,7 +483,7 @@ parser.add_argument(
     '--plus',
     action=timeparse.ParseTimedelta,
     nargs='+',
-    default=timedelta(),
+    default=datetime.timedelta(),
     dest='hours'    #make ParseTimedelta take the first value as hours.
     )
 parser.add_argument(
@@ -464,9 +494,15 @@ parser.add_argument(
 
 
 def main():
-    try: jexifs = Jexifs(parser.parse_args())
+    try: args = parser.parse_args()
+    #if reading stdin will be interrupted
     except (IOError, KeyboardInterrupt): sys.exit(1)
+
+    jexifs = Jexifs(args, Tests(args))
+
+    #set endian to big for parsing the imgs date
     timeparser.ENDIAN.set('big')
+
     try: jexifs.run()
     except (IOError, KeyboardInterrupt): pass
     except ConfigurationError as err: print err
