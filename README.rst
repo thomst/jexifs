@@ -11,6 +11,10 @@ The latest version of this project can be found at : http://github.com/thomst/je
 
 Installation
 ------------
+* You need pyexiv2. To install it on Ubuntu/Debian use ::
+
+    sudo apt-get install python-pyexiv2
+
 * Option 1 : Install via pip ::
 
     pip install jexifs

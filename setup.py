@@ -14,7 +14,7 @@ setup(
     long_description = open('README.rst').read() if os.path.isfile('README.rst') else str(),
     py_modules = ["jexifs"],
     scripts = ["jexifs"],
-    install_requires = ['timeparse'],
+    install_requires = ['timeparse', 'timeparser'],
     classifiers=[
         'Development Status :: 4 - Beta',
         'Environment :: Console',
