@@ -87,12 +87,6 @@ arguments for image-selection:
                             image should be in.
                             Mind that this only gives useful results if the
                             the images are sorted by datetime.
-
-
-known bugs:
-  Using a duration that passes midnight won't produce a senseful result:
-  --times 22h --plus 4h would look for images that are older than 22h and
-  younger than 2h. Date will not be regarded.
 """
 
 
@@ -101,6 +95,9 @@ class ConfigurationError(argparse.ArgumentTypeError):
         self.msg = msg
     def __str__(self):
         return self.msg
+
+
+class StopLoop(Exception): pass
 
 
 class classproperty(object):
@@ -263,19 +260,22 @@ class Tests(object):
     def __init__(self, args):
         self.times = args.times
         self.dates = args.dates
+        if self.times: self.times.sort()
+        if self.dates: self.dates.sort()
         self.model = args.model
         self.exposure_time = args.exposure_time
         self.first_after = args.first_after
         self.period = args.hours
         if self.times: self.timed = dict([(time, None) for time in self.times])
 
+    #TODO: add a datetime-option and test for it, with and without period and
+    #first-after
     def __call__(self, img):
         if self.times and not self.check_times(img): return False
         if self.dates and not self.check_dates(img): return False
         if self.exposure_time and not self.check_exposure_time(img): return False
         if self.model and not self.check_model(img): return False
         return True
-
 
     def check_model(self, img):
         if not img['model']: return False
@@ -289,13 +289,11 @@ class Tests(object):
         else:
             return exti[0] < img['exposure_time'].value < exti[1]
 
-    #TODO: If I could be sure for chronologity I could stop the program after
-    #processing a searched date or datetime.
     def check_dates(self, img):
         if not img['date']: return False
+        if img['date'].value > self.dates[-1]: raise StopLoop
         return any([date == img['date'].value for date in self.dates])
 
-    #TODO: do the loop over times here.
     def check_times(self, img):
         if not img['time']: return False
         if self.first_after:
@@ -396,7 +394,9 @@ class Jexifs(object):
     def printlines(self):
         if self.args.headline: print Image.fmt.translate(None, '{}')
         for img in self.images:
-            if self.tests(img): img.fprint()
+            try:
+                if self.tests(img): img.fprint()
+            except StopLoop: break
 
 
 parser = argparse.ArgumentParser(
@@ -429,11 +429,6 @@ parser.add_argument(
     '--sort',
     default=None,
     )
-#TODO: if FORMAT is one singel key and I use an index-file and pipe the result throug
-#head, I get a strange Error:
-#close failed in file object destructor:
-#sys.excepthook is missing
-#lost sys.stderr
 parser.add_argument(
     '-f',
     '--format',
@@ -484,7 +479,7 @@ parser.add_argument(
     action=timeparse.ParseTimedelta,
     nargs='+',
     default=datetime.timedelta(),
-    dest='hours'    #make ParseTimedelta take the first value as hours.
+    dest='hours'    #makes ParseTimedelta taking the first value as hours.
     )
 parser.add_argument(
     '-a',
@@ -496,7 +491,9 @@ parser.add_argument(
 def main():
     try: args = parser.parse_args()
     #if reading stdin will be interrupted
-    except (IOError, KeyboardInterrupt): sys.exit(1)
+    except (IOError, KeyboardInterrupt) as err:
+        print err
+        sys.exit(1)
 
     jexifs = Jexifs(args, Tests(args))
 
