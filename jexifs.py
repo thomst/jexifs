@@ -21,6 +21,7 @@ import pyexiv2
 import datetime
 import timeparse
 import timeparser
+from collections import OrderedDict
 from fractions import Fraction
 
 timeparser.TimeFormats.config(try_hard=True)
@@ -97,7 +98,7 @@ class ConfigurationError(argparse.ArgumentTypeError):
         return self.msg
 
 
-class StopLoop(Exception): pass
+class PrintStop(Exception): pass
 
 
 class classproperty(object):
@@ -258,24 +259,47 @@ class Index(object):
 
 class Tests(object):
     def __init__(self, args):
-        self.times = args.times
-        self.dates = args.dates
-        if self.times: self.times.sort()
-        if self.dates: self.dates.sort()
         self.model = args.model
         self.exposure_time = args.exposure_time
+        self.times = args.times
+        self.dates = args.dates
+        self.datetimes = args.datetimes
+        if self.times: self.times = OrderedDict([(t, None) for t in sorted(self.times)])
+        if self.dates: self.dates.sort()
+        if self.datetimes: self.datetimes.sort()
         self.first_after = args.first_after
         self.period = args.hours
-        if self.times: self.timed = dict([(time, None) for time in self.times])
+        self._tests = list()
 
-    #TODO: add a datetime-option and test for it, with and without period and
-    #first-after
     def __call__(self, img):
-        if self.times and not self.check_times(img): return False
-        if self.dates and not self.check_dates(img): return False
-        if self.exposure_time and not self.check_exposure_time(img): return False
-        if self.model and not self.check_model(img): return False
-        return True
+        return all([test(img) for test in self.tests])
+
+    @property
+    def tests(self):
+        if self._tests: return self._tests
+        if self.dates: self._tests.append(self.check_dates)
+        if self.exposure_time: self._tests.append(self.check_exposure_time)
+        if self.model: self._tests.append(self.check_model)
+        if self.datetimes:
+            if self.first_after and self.period:
+                self._tests.append(self.first_datetime_in_period)
+            elif self.first_after:
+                self._tests.append(self.first_after_datetime)
+            elif self.period:
+                self._tests.append(self.datetime_in_period)
+            else:
+                self._tests.append(self.on_datetime)
+        if self.times:
+            if self.first_after and self.period:
+                self._tests.append(self.first_time_in_period)
+            elif self.first_after:
+                self._tests.append(self.first_after_time)
+            elif self.period:
+                self._tests.append(self.time_in_period)
+            else:
+                self._tests.append(self.on_time)
+        return self._tests
+
 
     def check_model(self, img):
         if not img['model']: return False
@@ -287,62 +311,89 @@ class Tests(object):
         if len(exti) == 1:
             return img['exposure_time'].value == exti[0]
         else:
-            return exti[0] < img['exposure_time'].value < exti[1]
+            return exti[0] <= img['exposure_time'].value < exti[1]
 
     def check_dates(self, img):
         if not img['date']: return False
-        if img['date'].value > self.dates[-1]: raise StopLoop
-        return any([date == img['date'].value for date in self.dates])
+        try: d = self.dates[0]
+        except IndexError: raise PrintStop
+        if d == img['date'].value: return True
+        elif d < img['date']: self.dates.remove(d)
+        return False
 
-    def check_times(self, img):
+#############
+    def first_datetime_in_period(self, img):
+        if not img['datetime']: return False
+        try: dt = self.datetimes[0]
+        except IndexError: raise PrintStop
+        if dt <= img['datetime'].value: self.datetimes.remove(dt)
+        if dt <= img['datetime'].value < dt + self.period: return True
+        return False
+
+    def first_after_datetime(self, img):
+        if not img['datetime']: return False
+        try: dt = self.datetimes[0]
+        except IndexError: raise PrintStop
+        if img['datetime'].value >= dt:
+            self.datetimes.remove(dt)
+            return True
+        return False
+
+    def datetime_in_period(self, img):
+        if not img['datetime']: return False
+        try: dt = self.datetimes[0]
+        except IndexError: raise PrintStop
+        edt = dt + self.period
+        if dt <= img['datetime'].value < edt: return True
+        if img['datetime'].value >= edt: self.datetimes.remove(dt)
+        return False
+
+    def on_datetime(self, img):
+        if not img['datetime']: return False
+        try: dt = self.datetimes[0]
+        except IndexError: raise PrintStop
+        if img['datetime'].value == dt: return True
+        if img['datetime'].value > dt: self.datetimes.remove(dt)
+        return False
+
+
+################
+    def first_time_in_period(self, img):
         if not img['time']: return False
-        if self.first_after:
-            if self.period: return self.first_in_period(img)
-            else: return self.first_after_time(img)
-        else:
-            if self.period: return self.in_period(img)
-            else: return self.on_time(img)
-
-    def first_in_period(self, img):
-        for time in self.times:
-            if self.timed[time]:
-                self.timed[time] = img['time'].value > time
-            else:
-                self.timed[time] = img['time'].value > time
-                if self.timed[time] and img['time'].value < time + self.period:
-                    return True
+        for t, b in self.times.items():
+            et = t + self.period
+            self.times[t] = t <= img['time'].value <= et
+            if not b and t <= img['time'].value <= et:return True
         return False
 
     def first_after_time(self, img):
-        for time in self.times:
-            if self.timed[time]:
-                self.timed[time] = img['time'].value > time
-            else:
-                self.timed[time] = img['time'].value > time
-                if self.timed[time]: return True
+        if not img['time']: return False
+        for t, b in self.times.items():
+            self.times[t] = t <= img['time'].value
+            if not b and t <= img['time'].value:return True
         return False
 
-    def in_period(self, img):
-        if not img['date']:
-            return any([t < img['time'].value < t + self.period for t in self.times])
-        else:
-            for time in self.times:
-                if not self.timed[time]:
-                    if img['time'].value > time:
-                        self.timed[time] = datetime.datetime.combine(img['date'].value, time)
-                if self.timed[time]:
-                    if img['datetime'].value < self.timed[time] + self.period:
-                        return True
-                    else: self.timed[time] = None
+    def time_in_period(self, img):
+        if not img['time']: return False
+        for t, dt in self.times.items():
+            if not dt:
+                if t <= img['time'].value:
+                    dt = datetime.datetime.combine(img['date'].value, t)
+            if dt:
+                if dt <= img['datetime'].value < dt + self.period: return True
+                else: dt = None
+            self.times[t] = dt
+        return False
 
     def on_time(self, img):
-        return any([t == img['time'].value for t in self.times])
+        if not img['time']: return False
+        return any([t == img['time'].value for t in self.times.keys()])
 
 
 class Jexifs(object):
-    def __init__(self, args, tests):
+    def __init__(self, args):
         self.args = args
-        self.tests = tests
+        self.tests = Tests(args)
         self._paths = list()
         self._images = None
 
@@ -389,14 +440,14 @@ class Jexifs(object):
         if attr == 'exposure_time':
             self._images.sort(key=lambda i: i[attr].value)
         else:
-            self._images.sort(key=lambda i: i[attr].value)
+            self._images.sort(key=lambda i: i[attr].rvalue)
 
     def printlines(self):
         if self.args.headline: print Image.fmt.translate(None, '{}')
         for img in self.images:
             try:
                 if self.tests(img): img.fprint()
-            except StopLoop: break
+            except PrintStop: break
 
 
 parser = argparse.ArgumentParser(
@@ -462,6 +513,13 @@ parser.add_argument(
     default=None
     )
 parser.add_argument(
+    '-D',
+    '--datetimes',
+    action=timeparse.AppendDatetime,
+    nargs='+',
+    default=None
+    )
+parser.add_argument(
     '-m',
     '--model',
     default=None
@@ -495,7 +553,7 @@ def main():
         print err
         sys.exit(1)
 
-    jexifs = Jexifs(args, Tests(args))
+    jexifs = Jexifs(args)
 
     #set endian to big for parsing the imgs date
     timeparser.ENDIAN.set('big')

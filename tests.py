@@ -15,7 +15,7 @@ from jexifs import Jexifs
 
 
 
-class BaseTextCase(unittest.TestCase):
+class BaseTestCase(unittest.TestCase):
     def setUp(self):
         self.held = sys.stdout
         sys.stdout = StringIO()
@@ -35,10 +35,10 @@ class BaseTextCase(unittest.TestCase):
         ENDIAN.set('little')
         args = parser.parse_args(shlex.split(argstring))
         ENDIAN.set('big')
-        self.jexifs = Jexifs(args, Tests(args))
+        self.jexifs = Jexifs(args)
 
 
-class TestIndexFormat(BaseTextCase):
+class TestIndexFormat(BaseTestCase):
 
     def test_infile(self):
         self.init(r'-i Index/fshort.tbl')
@@ -72,7 +72,7 @@ class TestIndexFormat(BaseTextCase):
             )
 
 
-class TestIndexSorting(BaseTextCase):
+class TestIndexSorting(BaseTestCase):
 
     def test_sort_datetime(self):
         self.init(r'-i Index/fshort.tbl -s datetime')
@@ -107,7 +107,7 @@ class TestIndexSorting(BaseTextCase):
         self.jexifs.printlines()
 
 
-class TestFileSelection(BaseTextCase):
+class TestFileSelection(BaseTestCase):
 
     def test_t(self):
         self.init(r'Bilder/:jpg -t 20h')
