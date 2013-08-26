@@ -21,7 +21,6 @@ import pyexiv2
 import datetime
 import timeparse
 import timeparser
-from collections import OrderedDict
 from fractions import Fraction
 
 timeparser.TimeFormats.config(try_hard=True)
@@ -264,7 +263,7 @@ class Tests(object):
         self.times = args.times
         self.dates = args.dates
         self.datetimes = args.datetimes
-        if self.times: self.times = OrderedDict([(t, None) for t in sorted(self.times)])
+        if self.times: self.times = dict([(t, None) for t in sorted(self.times)])
         if self.dates: self.dates.sort()
         if self.datetimes: self.datetimes.sort()
         self.first_after = args.first_after
@@ -272,7 +271,9 @@ class Tests(object):
         self._tests = list()
 
     def __call__(self, img):
-        return all([test(img) for test in self.tests])
+        for test in self.tests:
+            if not test(img): return False
+        return True
 
     @property
     def tests(self):
@@ -318,7 +319,7 @@ class Tests(object):
         try: d = self.dates[0]
         except IndexError: raise PrintStop
         if d == img['date'].value: return True
-        elif d < img['date']: self.dates.remove(d)
+        elif d < img['date'].value: self.dates.remove(d)
         return False
 
 #############
@@ -375,19 +376,19 @@ class Tests(object):
 
     def time_in_period(self, img):
         if not img['time']: return False
-        for t, dt in self.times.items():
-            if not dt:
+        for t in self.times:
+            if not self.times[t]:
                 if t <= img['time'].value:
                     dt = datetime.datetime.combine(img['date'].value, t)
-            if dt:
-                if dt <= img['datetime'].value < dt + self.period: return True
-                else: dt = None
-            self.times[t] = dt
+                    self.times[t] = dt + self.period
+            if self.times[t]:
+                if img['datetime'].value < self.times[t]: return True
+                else: self.times[t] = None
         return False
 
     def on_time(self, img):
         if not img['time']: return False
-        return any([t == img['time'].value for t in self.times.keys()])
+        return any([t == img['time'].value for t in self.times])
 
 
 class Jexifs(object):
