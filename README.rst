@@ -66,6 +66,9 @@ jexifs --help ::
       data:
       -d, --dates DATE [DATE..] Select all images captured at DATE.
       -t, --times TIME [TIME..] Select all images captured at TIME.
+      -D, --datetime DATE TIME  Select all images captured at DATE TIME.
+                                Use this option multiple times to specify mor than
+                                one datetime.
       -e, --exposure-time SEC [SEC2]
                                 Select all images whose exposure-time is SEC or
                                 between SEC and SEC2.
@@ -75,7 +78,7 @@ jexifs --help ::
       durations:
       -p, --plus [HOURS] [MINUTES] [SECONDS]
                                 Defines a duration that starts with a specified time.
-                                To be used together with --times.
+                                To be used with --times or --datetime.
       -a, --first-after         Select the first matched image for after each
                                 specified time. Use --plus to specify a timespan the
                                 image should be in.
