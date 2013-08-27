@@ -141,6 +141,18 @@ class TestFileSelection(BaseTestCase):
         self.init(r'Bilder/:jpg -d 9.7.2013 -t 8:30 -p 20min -a')
         self.jexifs.printlines()
 
+    def test_D(self):
+        self.init(r'Bilder/:jpg -D 9.7.2013 8:30')
+        self.jexifs.printlines()
+
+    def test_dp(self):
+        self.init(r'Bilder/:jpg -D 9.7.2013 8:30 -p 20min')
+        self.jexifs.printlines()
+
+    def test_dpa(self):
+        self.init(r'Bilder/:jpg -D 9.7.2013 8:30 -p 20min -a')
+        self.jexifs.printlines()
+
 
 
 

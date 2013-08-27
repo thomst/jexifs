@@ -72,6 +72,9 @@ arguments for image-selection:
   data:
   -d, --dates DATE [DATE..] Select all images captured at DATE.
   -t, --times TIME [TIME..] Select all images captured at TIME.
+  -D, --datetime DATE TIME  Select all images captured at DATE TIME.
+                            Use this option multiple times to specify mor than
+                            one datetime.
   -e, --exposure-time SEC [SEC2]
                             Select all images whose exposure-time is SEC or
                             between SEC and SEC2.
@@ -81,7 +84,7 @@ arguments for image-selection:
   durations:
   -p, --plus [HOURS] [MINUTES] [SECONDS]
                             Defines a duration that starts with a specified time.
-                            To be used together with --times.
+                            To be used with --times or --datetime.
   -a, --first-after         Select the first matched image for after each
                             specified time. Use --plus to specify a timespan the
                             image should be in.
@@ -90,13 +93,7 @@ arguments for image-selection:
 """
 
 
-class ConfigurationError(argparse.ArgumentTypeError):
-    def __init__(self, msg):
-        self.msg = msg
-    def __str__(self):
-        return self.msg
-
-
+class ConfigurationError(argparse.ArgumentTypeError): pass
 class PrintStop(Exception): pass
 
 
@@ -128,6 +125,7 @@ class Attr(object):
         return bool(self.rvalue)
 
 
+#TODO: output-format for single date/time-values
 class DatetimeAttr(Attr):
     _fmt = None
     FORMATS = 'DatetimeFormats'
@@ -262,7 +260,7 @@ class Tests(object):
         self.exposure_time = args.exposure_time
         self.times = args.times
         self.dates = args.dates
-        self.datetimes = args.datetimes
+        self.datetimes = args.datetime
         if self.times: self.times = dict([(t, None) for t in sorted(self.times)])
         if self.dates: self.dates.sort()
         if self.datetimes: self.datetimes.sort()
@@ -271,16 +269,14 @@ class Tests(object):
         self._tests = list()
 
     def __call__(self, img):
-        for test in self.tests:
-            if not test(img): return False
-        return True
+        return all((test(img) for test in self.tests))
 
     @property
     def tests(self):
         if self._tests: return self._tests
-        if self.dates: self._tests.append(self.check_dates)
         if self.exposure_time: self._tests.append(self.check_exposure_time)
         if self.model: self._tests.append(self.check_model)
+        if self.dates: self._tests.append(self.check_dates)
         if self.datetimes:
             if self.first_after and self.period:
                 self._tests.append(self.first_datetime_in_period)
@@ -322,7 +318,7 @@ class Tests(object):
         elif d < img['date'].value: self.dates.remove(d)
         return False
 
-#############
+####check datetimes
     def first_datetime_in_period(self, img):
         if not img['datetime']: return False
         try: dt = self.datetimes[0]
@@ -357,11 +353,11 @@ class Tests(object):
         if img['datetime'].value > dt: self.datetimes.remove(dt)
         return False
 
-
-################
+####check times
     def first_time_in_period(self, img):
         if not img['time']: return False
-        for t, b in self.times.items():
+        for t in self.times:
+            b = self.times[t]
             et = t + self.period
             self.times[t] = t <= img['time'].value <= et
             if not b and t <= img['time'].value <= et:return True
@@ -369,7 +365,8 @@ class Tests(object):
 
     def first_after_time(self, img):
         if not img['time']: return False
-        for t, b in self.times.items():
+        for t in self.times:
+            b = self.times[t]
             self.times[t] = t <= img['time'].value
             if not b and t <= img['time'].value:return True
         return False
@@ -391,6 +388,7 @@ class Tests(object):
         return any([t == img['time'].value for t in self.times])
 
 
+#TODO: action-option to cp, rm or mv the files
 class Jexifs(object):
     def __init__(self, args):
         self.args = args
@@ -515,7 +513,7 @@ parser.add_argument(
     )
 parser.add_argument(
     '-D',
-    '--datetimes',
+    '--datetime',
     action=timeparse.AppendDatetime,
     nargs='+',
     default=None
