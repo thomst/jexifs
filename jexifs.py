@@ -157,6 +157,7 @@ class ExposureTimeAttr(Attr):
         return Fraction(self.rvalue)
 
 
+#TODO: Numeration for Images
 class Image(dict):
     KEYS = {
         'model' : 'Exif.Image.Model',
